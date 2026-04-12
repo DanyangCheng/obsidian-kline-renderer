@@ -1,4 +1,8 @@
 # 📈 Obsidian K-Line Renderer
+
+[![English](https://img.shields.io/badge/English-blue.svg)](README.md)
+[![简体中文](https://img.shields.io/badge/简体中文-red.svg)](README.zh-CN.md)
+
 Obsidian K-Line Renderer 是一款为 Obsidian 量身打造的本地 K线图（蜡烛图）渲染插件。它允许你直接在 Markdown 笔记中，通过简单的代码块语法，将历史行情数据、量化回测结果或金融分析数据转化为高度互动、完全本地化的专业 SVG 图表。
 
 ## ✨ 核心特性
