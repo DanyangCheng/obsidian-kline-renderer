@@ -1,8 +1,32 @@
-/*
+/* K-Line Renderer Plugin Styles */
 
-This CSS file will be included with your plugin, and
-available in the app when your plugin is enabled.
+.kline-container {
+  margin: 1em 0;
+  overflow-x: auto;
+}
 
-If your plugin does not need CSS, delete this file.
+.kline-container svg.kline-chart {
+  border-radius: 6px;
+  display: block;
+}
 
-*/
+/* Dark mode: subtle border */
+.theme-dark .kline-container svg.kline-chart {
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.theme-light .kline-container svg.kline-chart {
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.06);
+}
+
+/* Error message */
+.kline-error {
+  padding: 12px 16px;
+  border-radius: 6px;
+  background: rgba(239, 83, 80, 0.1);
+  border-left: 3px solid #ef5350;
+  color: #ef5350;
+  font-family: var(--font-monospace);
+  font-size: 13px;
+}
