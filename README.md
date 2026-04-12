@@ -1,90 +1,154 @@
-# Obsidian Sample Plugin
+# K-Line Renderer — Obsidian Plugin
 
-This is a sample plugin for Obsidian (https://obsidian.md).
+在 Obsidian 笔记中直接渲染 **K 线图（蜡烛图）**，支持多种数据格式，无需外部依赖。
 
-This project uses TypeScript to provide type checking and documentation.
-The repo depends on the latest plugin API (obsidian.d.ts) in TypeScript Definition format, which contains TSDoc comments describing what it does.
+---
 
-This sample plugin demonstrates some of the basic functionality the plugin API can do.
-- Adds a ribbon icon, which shows a Notice when clicked.
-- Adds a command "Open modal (simple)" which opens a Modal.
-- Adds a plugin setting tab to the settings page.
-- Registers a global click event and output 'click' to the console.
-- Registers a global interval which logs 'setInterval' to the console.
+## 功能特性
 
-## First time developing plugins?
+- ✅ 纯 SVG 渲染，无外部依赖
+- ✅ 支持多种数据格式（空格 / 逗号 / CSV / JSON）
+- ✅ 成交量柱状图
+- ✅ 移动平均线（MA5 / MA10 / MA20 等）
+- ✅ 鼠标悬停 Tooltip（浏览器原生）
+- ✅ 自适应宽度
+- ✅ 代码块内联选项覆盖全局设置
+- ✅ 深色 / 浅色主题自动适配
 
-Quick starting guide for new plugin devs:
+---
 
-- Check if [someone already developed a plugin for what you want](https://obsidian.md/plugins)! There might be an existing plugin similar enough that you can partner up with.
-- Make a copy of this repo as a template with the "Use this template" button (login to GitHub if you don't see it).
-- Clone your repo to a local development folder. For convenience, you can place this folder in your `.obsidian/plugins/your-plugin-name` folder.
-- Install NodeJS, then run `npm i` in the command line under your repo folder.
-- Run `npm run dev` to compile your plugin from `main.ts` to `main.js`.
-- Make changes to `main.ts` (or create new `.ts` files). Those changes should be automatically compiled into `main.js`.
-- Reload Obsidian to load the new version of your plugin.
-- Enable plugin in settings window.
-- For updates to the Obsidian API run `npm update` in the command line under your repo folder.
+## 安装方法
 
-## Releasing new releases
+### 方法 1：手动安装（推荐开发期使用）
 
-- Update your `manifest.json` with your new version number, such as `1.0.1`, and the minimum Obsidian version required for your latest release.
-- Update your `versions.json` file with `"new-plugin-version": "minimum-obsidian-version"` so older versions of Obsidian can download an older version of your plugin that's compatible.
-- Create new GitHub release using your new version number as the "Tag version". Use the exact version number, don't include a prefix `v`. See here for an example: https://github.com/obsidianmd/obsidian-sample-plugin/releases
-- Upload the files `manifest.json`, `main.js`, `styles.css` as binary attachments. Note: The manifest.json file must be in two places, first the root path of your repository and also in the release.
-- Publish the release.
+1. 将以下三个文件复制到你的 Vault 下：
+   ```
+   VaultFolder/.obsidian/plugins/kline-renderer/main.js
+   VaultFolder/.obsidian/plugins/kline-renderer/manifest.json
+   VaultFolder/.obsidian/plugins/kline-renderer/styles.css
+   ```
+2. 重启 Obsidian
+3. 进入 **设置 → 第三方插件 → 已安装插件**，启用 **K-Line Renderer**
 
-> You can simplify the version bump process by running `npm version patch`, `npm version minor` or `npm version major` after updating `minAppVersion` manually in `manifest.json`.
-> The command will bump version in `manifest.json` and `package.json`, and add the entry for the new version to `versions.json`
+### 方法 2：从源码构建
 
-## Adding your plugin to the community plugin list
-
-- Check the [plugin guidelines](https://docs.obsidian.md/Plugins/Releasing/Plugin+guidelines).
-- Publish an initial version.
-- Make sure you have a `README.md` file in the root of your repo.
-- Make a pull request at https://github.com/obsidianmd/obsidian-releases to add your plugin.
-
-## How to use
-
-- Clone this repo.
-- Make sure your NodeJS is at least v16 (`node --version`).
-- `npm i` or `yarn` to install dependencies.
-- `npm run dev` to start compilation in watch mode.
-
-## Manually installing the plugin
-
-- Copy over `main.js`, `styles.css`, `manifest.json` to your vault `VaultFolder/.obsidian/plugins/your-plugin-id/`.
-
-## Improve code quality with eslint
-- [ESLint](https://eslint.org/) is a tool that analyzes your code to quickly find problems. You can run ESLint against your plugin to find common bugs and ways to improve your code. 
-- This project already has eslint preconfigured, you can invoke a check by running`npm run lint`
-- Together with a custom eslint [plugin](https://github.com/obsidianmd/eslint-plugin) for Obsidan specific code guidelines.
-- A GitHub action is preconfigured to automatically lint every commit on all branches.
-
-## Funding URL
-
-You can include funding URLs where people who use your plugin can financially support it.
-
-The simple way is to set the `fundingUrl` field to your link in your `manifest.json` file:
-
-```json
-{
-    "fundingUrl": "https://buymeacoffee.com"
-}
+```bash
+git clone <this-repo> .obsidian/plugins/kline-renderer
+cd .obsidian/plugins/kline-renderer
+npm install
+npm run build
 ```
 
-If you have multiple URLs, you can also do:
+---
 
-```json
-{
-    "fundingUrl": {
-        "Buy Me a Coffee": "https://buymeacoffee.com",
-        "GitHub Sponsor": "https://github.com/sponsors",
-        "Patreon": "https://www.patreon.com/"
-    }
-}
+## 使用方法
+
+在笔记中创建一个 ` ```kline ` 代码块，每行代表一根 K 线。
+
+### 格式 1：空格 / 逗号分隔（OHLC）
+
+```kline
+# title: 示例股票
+2024-01-01  100  112  98   108
+2024-01-02  108  115  105  111
+2024-01-03  111  111  100  102
+2024-01-04  102  108  99   106
+2024-01-05  106  120  104  118
 ```
 
-## API Documentation
+### 格式 2：带成交量（OHLCV）
 
-See https://docs.obsidian.md
+```kline
+# title: 带成交量示例
+# ma: 3
+2024-01-01, 100, 112, 98,  108, 32000
+2024-01-02, 108, 115, 105, 111, 45000
+2024-01-03, 111, 111, 100, 102, 28000
+2024-01-04, 102, 108, 99,  106, 36000
+2024-01-05, 106, 120, 104, 118, 62000
+```
+
+### 格式 3：CSV（可含表头）
+
+```kline
+date,open,high,low,close,volume
+2024-01-01,100,112,98,108,32000
+2024-01-02,108,115,105,111,45000
+2024-01-03,111,111,100,102,28000
+```
+
+### 格式 4：JSON 数组
+
+```kline
+[{"label":"Jan 1","open":100,"high":112,"low":98,"close":108,"volume":32000},{"label":"Jan 2","open":108,"high":115,"low":105,"close":111,"volume":45000}]
+```
+
+---
+
+## 代码块选项
+
+在代码块最前面用 `# key: value` 设置选项（优先于全局设置）：
+
+| 选项         | 说明                         | 示例                     |
+|------------|----------------------------|------------------------|
+| `title`    | 图表标题                       | `# title: 上证指数`       |
+| `width`    | 宽度（px）                     | `# width: 900`         |
+| `height`   | 高度（px）                     | `# height: 500`        |
+| `bull`     | 阳线颜色                       | `# bull: #26a69a`      |
+| `bear`     | 阴线颜色                       | `# bear: #ef5350`      |
+| `volume`   | 显示成交量 true/false           | `# volume: false`      |
+| `grid`     | 显示网格 true/false            | `# grid: true`         |
+| `ma`       | 均线周期（逗号分隔）                 | `# ma: 5,10,20`        |
+| `macolors` | 均线颜色（逗号分隔，与 ma 一一对应）       | `# macolors: #f90,#2196f3` |
+
+---
+
+## 完整示例
+
+```kline
+# title: BTC/USDT 日线
+# width: 900
+# height: 450
+# bull: #26a69a
+# bear: #ef5350
+# volume: true
+# ma: 5,10
+# macolors: #ff9800,#2196f3
+2024-01-01, 42000, 43500, 41800, 43200, 18500
+2024-01-02, 43200, 44100, 42900, 43800, 22000
+2024-01-03, 43800, 44500, 43000, 43100, 19800
+2024-01-04, 43100, 43500, 41500, 41900, 31000
+2024-01-05, 41900, 42800, 41200, 42500, 27500
+2024-01-06, 42500, 45000, 42300, 44800, 35000
+2024-01-07, 44800, 46000, 44500, 45600, 41000
+2024-01-08, 45600, 45800, 44000, 44200, 28000
+2024-01-09, 44200, 44500, 43000, 43500, 22000
+2024-01-10, 43500, 44000, 42000, 43800, 19000
+```
+
+---
+
+## 全局设置
+
+进入 **设置 → 插件选项 → K-Line Renderer** 可配置：
+
+- 默认宽高
+- 阴阳线颜色、影线颜色
+- 是否默认显示成交量、网格、均线
+- 默认均线周期和颜色
+
+---
+
+## 开发
+
+```bash
+npm install        # 安装依赖
+npm run dev        # 开发模式（监听文件变化）
+npm run build      # 生产构建
+```
+
+---
+
+## License
+
+MIT
