@@ -7,6 +7,12 @@ import {
 } from "obsidian";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
+interface ViewportState {
+  start: number;
+  end: number;
+  priceMin?: number;
+  priceMax?: number;
+}
 
 interface KlineData {
   label?: string;   // date / name
@@ -178,26 +184,25 @@ interface BlockOpts {
   maColors: string;
 }
 
-// ─── Moving Average ───────────────────────────────────────────────────────────
-
-function calcMA(data: KlineData[], period: number): (number | null)[] {
-  return data.map((_, i) => {
-    if (i < period - 1) return null;
-    const slice = data.slice(i - period + 1, i + 1);
-    return slice.reduce((s, d) => s + d.close, 0) / period;
-  });
-}
 
 // ─── SVG Renderer ────────────────────────────────────────────────────────────
 
 function renderKlineSVG(
   data: KlineData[],
   settings: KlineSettings,
-  opts: Partial<BlockOpts>
+  opts: Partial<BlockOpts>,
+  viewport?: ViewportState
 ): string {
-  if (data.length === 0) {
+  const start = viewport?.start ?? 0;
+  const end = viewport?.end ?? data.length;
+
+  const visibleData = data.slice(start, end);
+  const num = visibleData.length;
+
+  if (num == 0) {
     return `<div class="kline-error">⚠️ No data to display</div>`;
   }
+
 
   const W         = opts.width    ?? settings.defaultWidth;
   const fullH     = opts.height   ?? settings.defaultHeight;
@@ -217,10 +222,10 @@ function renderKlineSVG(
   const chartW = W - padL - padR;
 
   // ── Price range ─────────────────────────────────────────────────────────
-  const allHighs  = data.map((d) => d.high);
-  const allLows   = data.map((d) => d.low);
-  const priceMin  = Math.min(...allLows);
-  const priceMax  = Math.max(...allHighs);
+  const allHighs = visibleData.map(d => d.high);
+  const allLows = visibleData.map(d => d.low);
+  const priceMin = viewport?.priceMin ?? Math.min(...allLows);
+  const priceMax = viewport?.priceMax ?? Math.max(...allHighs);
   const priceRng  = priceMax - priceMin || 1;
   const priceTop  = titleH + padT;
   const priceBotY = titleH + chartH - padB;
@@ -230,7 +235,7 @@ function renderKlineSVG(
     priceTop + priceAreaH * (1 - (v - priceMin) / priceRng);
 
   // ── Volume range ─────────────────────────────────────────────────────────
-  const maxVol   = showVol ? Math.max(...data.map((d) => d.volume ?? 0)) : 1;
+  const maxVol   = showVol ? Math.max(...visibleData.map((d) => d.volume ?? 0), 1) : 1;
   const volTop   = titleH + chartH + labelH;
   const volBotY  = fullH;
   const volAreaH = volBotY - volTop;
@@ -239,9 +244,10 @@ function renderKlineSVG(
     volTop + volAreaH * (1 - v / maxVol);
 
   // ── Candle layout ────────────────────────────────────────────────────────
-  const n         = data.length;
-  const candleW   = Math.max(2, Math.min(20, Math.floor(chartW / n) - 2));
+  const n         = visibleData.length;
   const step      = chartW / n;
+  const gap       = 2;
+  const candleW   = Math.max(1, step - gap);
   const cx        = (i: number) => padL + step * i + step / 2;
 
   // ── Price grid lines ─────────────────────────────────────────────────────
@@ -268,7 +274,7 @@ function renderKlineSVG(
   const candles: string[] = [];
   const tooltips: string[] = [];
 
-  data.forEach((d, i) => {
+  visibleData.forEach((d, i) => {
     const isBull  = d.close >= d.open;
     const color   = isBull ? bullColor : bearColor;
     const x       = cx(i);
@@ -276,7 +282,6 @@ function renderKlineSVG(
     const bot     = py(Math.min(d.open, d.close));
     const bodyH   = Math.max(1, bot - top);
     const hw      = candleW / 2;
-
     // Wick
     candles.push(
       `<line x1="${x.toFixed(1)}" y1="${py(d.high).toFixed(1)}"
@@ -291,16 +296,15 @@ function renderKlineSVG(
     );
 
     // Tooltip overlay
-    const tipLabel = d.label ?? `#${i + 1}`;
-    const tipText  = `${tipLabel} O:${d.open} H:${d.high} L:${d.low} C:${d.close}${d.volume !== undefined ? ` V:${d.volume}` : ""}`;
-    tooltips.push(
-      `<rect class="kline-tooltip-trigger"
-             x="${(x - step / 2).toFixed(1)}" y="${priceTop}"
-             width="${step.toFixed(1)}" height="${priceAreaH}"
-             fill="transparent">
-        <title>${tipText}</title>
-      </rect>`
-    );
+    const absoluteIdx = start + i;
+        tooltips.push(
+          `<rect class="kline-hover-trigger"
+                data-idx="${absoluteIdx}"
+                x="${(x - step / 2).toFixed(1)}" y="${priceTop}"
+                width="${step.toFixed(1)}" height="${priceAreaH}"
+                fill="transparent" style="cursor: crosshair;">
+          </rect>`
+        );
   });
 
   // ── X-axis labels (adaptive thinning) ────────────────────────────────────
@@ -308,9 +312,12 @@ function renderKlineSVG(
   const maxLabels = Math.floor(chartW / 60);
   const labelStep = Math.max(1, Math.ceil(n / maxLabels));
 
-  data.forEach((d, i) => {
-    if (i % labelStep !== 0) return;
-    const label = d.label ?? String(i + 1);
+  visibleData.forEach((d, i) => {
+    const absoluteIdx = start + i;
+    
+    if (absoluteIdx % labelStep !== 0) return; 
+    
+    const label = d.label ?? String(absoluteIdx + 1);
     xLabels.push(
       `<text x="${cx(i).toFixed(1)}" y="${(titleH + chartH + 14).toFixed(1)}"
         text-anchor="middle" font-size="10" fill="${settings.textColor}">${label}</text>`
@@ -320,55 +327,21 @@ function renderKlineSVG(
   // ── Volume bars ──────────────────────────────────────────────────────────
   const volBars: string[] = [];
   if (showVol) {
-    data.forEach((d, i) => {
+    visibleData.forEach((d, i) => {
       if (d.volume === undefined) return;
+      
       const isBull = d.close >= d.open;
-      const color  = isBull ? bullColor : bearColor;
-      const x      = cx(i);
+      const color  = isBull ? settings.bullColor : settings.bearColor;
+      const x      = cx(i); 
       const hw     = candleW / 2;
       const yTop   = vy(d.volume);
       const barH   = volBotY - yTop;
+      
       volBars.push(
         `<rect x="${(x - hw).toFixed(1)}" y="${yTop.toFixed(1)}"
                width="${candleW}" height="${barH.toFixed(1)}"
                fill="${color}" opacity="0.6" rx="1"/>`
       );
-    });
-  }
-
-  // ── Moving averages ──────────────────────────────────────────────────────
-  const maLines: string[] = [];
-  const maPeriodsRaw  = opts.ma       ?? (settings.showMA ? settings.maPeriods : "");
-  const maColorsRaw   = opts.maColors ?? settings.maColors;
-
-  if (maPeriodsRaw) {
-    const periods = maPeriodsRaw.split(",").map((s) => parseInt(s.trim())).filter((p) => !isNaN(p));
-    const colors  = maColorsRaw.split(",").map((s) => s.trim());
-
-    periods.forEach((period, idx) => {
-      const maData = calcMA(data, period);
-      const color  = colors[idx] ?? "#888";
-      let d = "";
-      maData.forEach((v, i) => {
-        if (v === null) return;
-        const x = cx(i);
-        const y = py(v);
-        d += d === "" ? `M${x.toFixed(1)},${y.toFixed(1)}` : `L${x.toFixed(1)},${y.toFixed(1)}`;
-      });
-      if (d) {
-        maLines.push(
-          `<path d="${d}" fill="none" stroke="${color}" stroke-width="1.5" opacity="0.85">
-             <title>MA${period}</title>
-           </path>`
-        );
-        // legend
-        const legendX = padL + (idx * 70);
-        maLines.push(
-          `<line x1="${legendX}" y1="${titleH + 8}" x2="${legendX + 14}" y2="${titleH + 8}"
-                 stroke="${color}" stroke-width="2"/>
-           <text x="${legendX + 18}" y="${titleH + 12}" font-size="10" fill="${color}">MA${period}</text>`
-        );
-      }
     });
   }
 
@@ -390,41 +363,193 @@ function renderKlineSVG(
          stroke="${settings.gridColor}" stroke-width="1" stroke-dasharray="4 2"/>`
     : "";
 
-  return `
-<svg class="kline-chart" xmlns="http://www.w3.org/2000/svg"
-     width="100%" viewBox="0 0 ${W} ${fullH}"
-     style="max-width:${W}px;background:${settings.bgColor};display:block;">
-  <style>
-    .kline-tooltip-trigger { cursor: crosshair; }
-    .kline-tooltip-trigger:hover rect { opacity: 0.05; fill: white; }
-  </style>
+return `
+  <svg class="kline-chart kline-interactive"
+     xmlns="http://www.w3.org/2000/svg"
+     width="100%"
+     viewBox="0 0 ${W} ${fullH}"
+     data-viewbox="0 0 ${W} ${fullH}"
+     style="max-width:${W}px;background:${settings.bgColor};
+            display:block;user-select:none;cursor:grab;">
 
-  <!-- Grid -->
   ${gridLines.join("\n  ")}
   ${gridLabels.join("\n  ")}
   ${volGridLine}
 
-  <!-- Title -->
   ${titleEl}
 
-  <!-- Candles -->
+  <text class="kline-hud" 
+        x="${padL + 5}" 
+        y="${priceTop + 14}" 
+        font-size="12" 
+        fill="${settings.textColor}" 
+        pointer-events="none"></text>
+
   ${candles.join("\n  ")}
 
-  <!-- MA Lines -->
-  ${maLines.join("\n  ")}
-
-  <!-- Volume -->
   ${volBars.join("\n  ")}
   ${volLabel}
 
-  <!-- X Labels -->
   ${xLabels.join("\n  ")}
 
-  <!-- Tooltip Overlays -->
   ${tooltips.join("\n  ")}
 </svg>`;
 }
 
+
+function enableKlineInteractions(
+  container: HTMLElement,
+  data: KlineData[],
+  settings: KlineSettings,
+  opts: Partial<BlockOpts>
+) {
+  let viewport: ViewportState = {
+    start: 0,
+    end: data.length,
+  };
+
+  let isDragging = false;
+  let dragStartX = 0;
+  let initialStart = 0;
+  let initialEnd = 0;
+
+  const render = () => {
+    container.innerHTML = renderKlineSVG(
+      data,
+      settings,
+      opts,
+      viewport
+    );
+  };
+
+  container.addEventListener("wheel", (e: WheelEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const svg = container.querySelector("svg");
+    if (!svg) return;
+
+    const rect = svg.getBoundingClientRect();
+    const mouseX = e.clientX - rect.left;
+    const padL = 60; 
+    const chartW = Math.max(1, svg.clientWidth - padL - 20); 
+    let mouseRatio = (mouseX - padL) / chartW;
+
+    mouseRatio = isNaN(mouseRatio) ? 0.5 : Math.max(0, Math.min(1, mouseRatio));
+
+    const zoomFactor = 0.15;
+    const range = viewport.end - viewport.start;
+    const totalDelta = Math.max(2, Math.round(range * zoomFactor));
+
+    let newStart = viewport.start;
+    let newEnd = viewport.end;
+
+    if (e.deltaY < 0) {
+      newStart += Math.round(totalDelta * mouseRatio);
+      newEnd -= Math.round(totalDelta * (1 - mouseRatio));
+    } else {
+      newStart -= Math.round(totalDelta * mouseRatio);
+      newEnd += Math.round(totalDelta * (1 - mouseRatio));
+    }
+
+    if (newEnd - newStart < 5) return;
+
+    if (newStart < 0) newStart = 0;
+    if (newEnd > data.length) newEnd = data.length;
+
+    if (newStart !== viewport.start || newEnd !== viewport.end) {
+      viewport.start = newStart;
+      viewport.end = newEnd;
+      render();
+    }
+  }, { passive: false });
+
+  container.addEventListener("mousedown", (e: MouseEvent) => {
+    isDragging = true;
+    dragStartX = e.clientX;
+    initialStart = viewport.start;
+    initialEnd = viewport.end;
+    
+    const svg = container.querySelector("svg");
+    if (svg) svg.style.cursor = "grabbing";
+
+    const onMouseMove = (moveEvt: MouseEvent) => {
+      if (!isDragging) return;
+      
+      const currentSvg = container.querySelector("svg");
+      const chartW = currentSvg ? Math.max(1, currentSvg.clientWidth - 80) : 800;
+      
+      const dx = moveEvt.clientX - dragStartX;
+      const range = initialEnd - initialStart;
+      const shift = -Math.round((dx / chartW) * range);
+
+      let newStart = initialStart + shift;
+      let newEnd = initialEnd + shift;
+
+      if (newStart < 0) {
+        newStart = 0;
+        newEnd = range;
+      }
+      if (newEnd > data.length) {
+        newEnd = data.length;
+        newStart = Math.max(0, data.length - range);
+      }
+
+      if (newStart !== viewport.start || newEnd !== viewport.end) {
+        viewport.start = newStart;
+        viewport.end = newEnd;
+        render();
+      }
+    };
+
+    const onMouseUp = () => {
+      isDragging = false;
+      const currentSvg = container.querySelector("svg");
+      if (currentSvg) currentSvg.style.cursor = "grab";
+
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+  });
+
+  container.addEventListener("dblclick", () => {
+    viewport = { start: 0, end: data.length };
+    render();
+  });
+
+  container.addEventListener("mousemove", (e: MouseEvent) => {
+    if (isDragging) return;
+    
+    const target = e.target as SVGElement;
+    const idxStr = target.getAttribute ? target.getAttribute("data-idx") : null;
+    
+    const svg = container.querySelector("svg");
+    if (!svg) return;
+    const hud = svg.querySelector(".kline-hud");
+    
+    if (idxStr !== null && hud) {
+      const idx = parseInt(idxStr, 10);
+      const d = data[idx];
+      if (d) {
+        const isBull = d.close >= d.open;
+        const color = isBull ? settings.bullColor : settings.bearColor;
+        const volStr = d.volume !== undefined ? `  量: ${d.volume}` : "";
+        const labelStr = d.label ? `${d.label} | ` : "";
+
+        hud.innerHTML = `<tspan font-weight="bold">${labelStr}</tspan>开: ${d.open}  高: ${d.high}  低: ${d.low}  收: <tspan fill="${color}" font-weight="bold">${d.close}</tspan>${volStr}`;
+      }
+    }
+  });
+
+  container.addEventListener("mouseleave", () => {
+    const svg = container.querySelector("svg");
+    const hud = svg?.querySelector(".kline-hud");
+    if (hud) hud.innerHTML = "";
+  });
+}
 // ─── Plugin ───────────────────────────────────────────────────────────────────
 
 export default class KlineRendererPlugin extends Plugin {
@@ -434,20 +559,21 @@ export default class KlineRendererPlugin extends Plugin {
     await this.loadSettings();
 
     // Register the ```kline code block processor
-    this.registerMarkdownCodeBlockProcessor(
-      "kline",
-      (source: string, el: HTMLElement, _ctx: MarkdownPostProcessorContext) => {
-        el.empty();
-        try {
-          const { data, opts } = parseKlineBlock(source, this.settings);
-          const svg = renderKlineSVG(data, this.settings, opts);
-          el.innerHTML = svg;
-          el.addClass("kline-container");
-        } catch (err) {
-          el.innerHTML = `<div class="kline-error">⚠️ K-Line render error: ${err}</div>`;
-        }
+  this.registerMarkdownCodeBlockProcessor(
+    "kline",
+    (source, el) => {
+      el.empty();
+      try {
+        const { data, opts } = parseKlineBlock(source, this.settings);
+        el.innerHTML = renderKlineSVG(data, this.settings, opts);
+        el.addClass("kline-container");
+
+        enableKlineInteractions(el, data, this.settings, opts);
+      } catch (err) {
+        el.innerHTML = `<div class="kline-error">⚠️ K-Line render error: ${err}</div>`;
       }
-    );
+    }
+  );
 
     // Settings tab
     this.addSettingTab(new KlineSettingTab(this.app, this));
@@ -558,38 +684,6 @@ class KlineSettingTab extends PluginSettingTab {
         t.setValue(this.plugin.settings.showGrid)
           .onChange(async (v) => {
             this.plugin.settings.showGrid = v;
-            await this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName("Show moving averages by default")
-      .addToggle((t) =>
-        t.setValue(this.plugin.settings.showMA)
-          .onChange(async (v) => {
-            this.plugin.settings.showMA = v;
-            await this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName("MA periods (comma-separated)")
-      .setDesc("e.g. 5,10,20")
-      .addText((t) =>
-        t.setValue(this.plugin.settings.maPeriods)
-          .onChange(async (v) => {
-            this.plugin.settings.maPeriods = v;
-            await this.plugin.saveSettings();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName("MA colors (comma-separated)")
-      .setDesc("e.g. #ff9800,#2196f3,#9c27b0")
-      .addText((t) =>
-        t.setValue(this.plugin.settings.maColors)
-          .onChange(async (v) => {
-            this.plugin.settings.maColors = v;
             await this.plugin.saveSettings();
           })
       );
