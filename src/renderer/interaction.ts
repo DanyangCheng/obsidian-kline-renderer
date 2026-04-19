@@ -167,6 +167,7 @@ export class KlineChartController extends MarkdownRenderChild {
     if (this.isDragging) return;
     
     const target = e.target as SVGElement;
+    // Get the absolute index of the current candlestick from the data-idx attribute of the trigger layer
     const idxStr = target.getAttribute?.("data-idx");
     const svg = this.containerEl.querySelector("svg");
     if (!svg) return;
@@ -175,7 +176,9 @@ export class KlineChartController extends MarkdownRenderChild {
     if (idxStr != null && hud) {
       const idx = parseInt(idxStr, 10);
       const d = this.data[idx];
+      
       if (d) {
+        // 1. Update HUD market data (O/H/L/C/V)
         const isBull = d.close >= d.open;
         const color = isBull ? this.settings.bullColor : this.settings.bearColor;
         const volStr = d.volume !== undefined ? `  volume: ${d.volume}` : "";
@@ -184,6 +187,10 @@ export class KlineChartController extends MarkdownRenderChild {
         hud.innerHTML = 
           `<tspan font-weight="bold">${labelStr}</tspan>` +
           `O: ${d.open}  H: ${d.high}  L: ${d.low}  C: <tspan fill="${color}" font-weight="bold">${d.close}</tspan>${volStr}`;
+
+        // 2. ✨ New: Adapt MA legend updates
+        // Pass the current mouse-over index to the update function
+        this.updateMALegends(idx);
       }
     }
   }
@@ -192,5 +199,40 @@ export class KlineChartController extends MarkdownRenderChild {
     const svg = this.containerEl.querySelector("svg");
     const hud = svg?.querySelector(".kline-hud");
     if (hud) hud.innerHTML = "";
+    if (this.viewport.end > 0) {
+      const lastVisibleIdx = Math.min(this.viewport.end - 1, this.data.length - 1);
+      this.updateMALegends(lastVisibleIdx);
+    }
+  }
+
+  private updateMALegends(targetIdx: number) {
+    const svg = this.containerEl.querySelector("svg");
+    if (!svg) return;
+
+    const isShowMA = this.opts.ma !== undefined ? true : this.settings.showMA;
+    if (!isShowMA) return;
+
+    const maPeriodsStr = this.opts.ma ?? this.settings.maPeriods;
+    const periods = maPeriodsStr.split(",").map(p => parseInt(p.trim())).filter(p => !isNaN(p) && p > 0);
+
+    // Iterate through all moving average periods that need to be displayed
+    periods.forEach((period) => {
+      // Find the corresponding DOM node using the markers set in svg.ts
+      const legendEl = svg.querySelector(`.ma-legend-text[data-period="${period}"]`);
+      if (!legendEl) return;
+
+      if (targetIdx >= period - 1) {
+        // Dynamically calculate the moving average value at the cursor position
+        let sum = 0;
+        for (let j = 0; j < period; j++) {
+          sum += this.data[targetIdx - j].close;
+        }
+        const avg = sum / period;
+        legendEl.innerHTML = `MA(${period}): ${avg.toFixed(2)}`;
+      } else {
+        // Display a dash when historical data is insufficient
+        legendEl.innerHTML = `MA(${period}): -`;
+      }
+    });
   }
 }

@@ -120,6 +120,63 @@ export function renderKlineSVG(
           </rect>`
         );
   });
+  
+// ─── Moving Averages ──────────────────────────────────────────
+  const maLines: string[] = [];
+  const maLegends: string[] = []; // New: used to store legend nodes
+  
+  const isShowMA = opts.ma !== undefined ? true : settings.showMA;
+
+  if (isShowMA) {
+    const maPeriodsStr = opts.ma ?? settings.maPeriods;
+    const maColorsStr = opts.maColors ?? settings.maColors;
+
+    const periods = maPeriodsStr.split(",").map(p => parseInt(p.trim())).filter(p => !isNaN(p) && p > 0);
+    const colors = maColorsStr.split(",").map(c => c.trim());
+
+    periods.forEach((period, pIdx) => {
+      const color = colors[pIdx % colors.length] || "#888888";
+      let pathD = "";
+      let isFirstPoint = true;
+      let lastMAValue: number | null = null; // Used to display value in legend
+
+      visibleData.forEach((_, i) => {
+        const absoluteIdx = start + i;
+        if (absoluteIdx >= period - 1) {
+          let sum = 0;
+          for (let j = 0; j < period; j++) {
+            sum += data[absoluteIdx - j].close;
+          }
+          const avg = sum / period;
+          lastMAValue = avg; // Record the average value of the last visible point
+
+          const x = cx(i);
+          const y = py(avg);
+
+          if (isFirstPoint) {
+            pathD += `M ${x.toFixed(1)} ${y.toFixed(1)} `;
+            isFirstPoint = false;
+          } else {
+            pathD += `L ${x.toFixed(1)} ${y.toFixed(1)} `;
+          }
+        }
+      });
+
+      if (pathD) {
+        maLines.push(
+          `<path d="${pathD}" fill="none" stroke="${color}" stroke-width="1.2" stroke-linejoin="round" pointer-events="none" />`
+        );
+        
+        // 生成图注：加入 class 和 data 属性，方便交互层捕获
+        const legendX = padL + 5 + (pIdx * 85); 
+        const displayVal = lastMAValue ? lastMAValue.toFixed(2) : "-";
+        maLegends.push(
+          `<text class="ma-legend-text" data-period="${period}" data-color="${color}" 
+                 x="${legendX}" y="${priceTop - 4}" font-size="10" fill="${color}" font-weight="bold">MA(${period}): ${displayVal}</text>`
+        );
+      }
+    });
+  }
 
   // ── X-axis labels (adaptive thinning) ────────────────────────────────────
   const xLabels: string[] = [];
@@ -191,6 +248,10 @@ return `
   ${volGridLine}
 
   ${titleEl}
+  
+  <g class="ma-legend-group">
+    ${maLegends.join("\n  ")}
+  </g>
 
   <text class="kline-hud" 
         x="${padL + 5}" 
@@ -200,6 +261,8 @@ return `
         pointer-events="none"></text>
 
   ${candles.join("\n  ")}
+  
+  ${maLines.join("\n  ")}
 
   ${volBars.join("\n  ")}
   ${volLabel}
