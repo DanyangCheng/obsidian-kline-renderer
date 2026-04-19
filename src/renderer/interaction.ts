@@ -4,10 +4,16 @@ import { renderKlineSVG } from "./svg";
 
 export class KlineChartController extends MarkdownRenderChild {
   private viewport: ViewportState;
+  
+  // ─── Drag state ────────────────────────────────────────────────────────────
   private isDragging = false;
   private dragStartX = 0;
   private initialStart = 0;
   private initialEnd = 0;
+
+  // ─── RAF de-duplication ─────────────────────────────────
+  private pendingRender = false;
+  private pendingDragFrame = false;
 
   private boundOnMouseMove: (e: MouseEvent) => void;
   private boundOnMouseUp: () => void;
@@ -22,7 +28,7 @@ export class KlineChartController extends MarkdownRenderChild {
     this.containerEl.addClass("kline-container");
     
     this.viewport = { start: 0, end: data.length };
-    
+
     this.boundOnMouseMove = this.onGlobalMouseMove.bind(this);
     this.boundOnMouseUp = this.onGlobalMouseUp.bind(this);
   }
@@ -41,15 +47,19 @@ export class KlineChartController extends MarkdownRenderChild {
   }
 
   public render() {
-    this.containerEl.innerHTML = renderKlineSVG(
-      this.data,
-      this.settings,
-      this.opts,
-      this.viewport
-    );
+    if (this.pendingRender) return;
+    this.pendingRender = true;
+    
+    requestAnimationFrame(() => {
+      this.pendingRender = false;
+      this.containerEl.innerHTML = renderKlineSVG(
+        this.data,
+        this.settings,
+        this.opts,
+        this.viewport
+      );
+    });
   }
-
-  // ─── Event Handlers ──────────────────────────────────────────────────────────
 
   private onWheel(e: WheelEvent) {
     e.preventDefault();
@@ -58,37 +68,31 @@ export class KlineChartController extends MarkdownRenderChild {
     const svg = this.containerEl.querySelector("svg");
     if (!svg) return;
 
-    // 1. Calculate the ratio of mouse hover position to implement "center-on-mouse" zoom
     const rect = svg.getBoundingClientRect();
     const mouseX = e.clientX - rect.left;
-    const padL = 60; // Must match padL in svg.ts
-    const chartW = Math.max(1, svg.clientWidth - padL - 20); 
-    let mouseRatio = (mouseX - padL) / chartW;
-    mouseRatio = isNaN(mouseRatio) ? 0.5 : Math.max(0, Math.min(1, mouseRatio));
+    const padL = 60;
+    const chartW = Math.max(1, svg.clientWidth - padL - 20);
+    let ratio = (mouseX - padL) / chartW;
+    ratio = isNaN(ratio) ? 0.5 : Math.max(0, Math.min(1, ratio));
 
-    // 2. Calculate the zoom delta
-    const zoomFactor = 0.15;
     const range = this.viewport.end - this.viewport.start;
-    const totalDelta = Math.max(2, Math.round(range * zoomFactor));
+    const delta = Math.max(2, Math.round(range * 0.15));
 
     let newStart = this.viewport.start;
     let newEnd = this.viewport.end;
 
-    // 3. Apply zoom
-    if (e.deltaY < 0) { // Scroll up -> zoom in (reduce range)
-      newStart += Math.round(totalDelta * mouseRatio);
-      newEnd -= Math.round(totalDelta * (1 - mouseRatio));
-    } else { // Scroll down -> zoom out (expand range)
-      newStart -= Math.round(totalDelta * mouseRatio);
-      newEnd += Math.round(totalDelta * (1 - mouseRatio));
+    if (e.deltaY < 0) { 
+      newStart += Math.round(delta * ratio);
+      newEnd -= Math.round(delta * (1 - ratio));
+    } else {
+      newStart -= Math.round(delta * ratio);
+      newEnd += Math.round(delta * (1 - ratio));
     }
 
-    // 4. Boundary constraints (show at least 5 candlesticks)
     if (newEnd - newStart < 5) return;
-    if (newStart < 0) newStart = 0;
-    if (newEnd > this.data.length) newEnd = this.data.length;
+    newStart = Math.max(0, newStart);
+    newEnd = Math.min(this.data.length, newEnd);
 
-    // 5. Trigger render
     if (newStart !== this.viewport.start || newEnd !== this.viewport.end) {
       this.viewport.start = newStart;
       this.viewport.end = newEnd;
@@ -111,36 +115,38 @@ export class KlineChartController extends MarkdownRenderChild {
 
   private onGlobalMouseMove(e: MouseEvent) {
     if (!this.isDragging) return;
-    
-    const currentSvg = this.containerEl.querySelector("svg");
-    const chartW = currentSvg ? Math.max(1, currentSvg.clientWidth - 80) : 800;
-    
-    // 1. Calculate mouse offset
-    const dx = e.clientX - this.dragStartX;
-    const range = this.initialEnd - this.initialStart;
-    
-    // 2. Convert pixel offset to candlestick data index offset (reverse: dragging right moves chart left)
-    const shift = -Math.round((dx / chartW) * range);
 
-    let newStart = this.initialStart + shift;
-    let newEnd = this.initialEnd + shift;
+    if (this.pendingDragFrame) return;
+    this.pendingDragFrame = true;
 
-    // 3. Boundary collision detection and correction
-    if (newStart < 0) {
-      newStart = 0;
-      newEnd = range;
-    }
-    if (newEnd > this.data.length) {
-      newEnd = this.data.length;
-      newStart = Math.max(0, this.data.length - range);
-    }
+    requestAnimationFrame(() => {
+      this.pendingDragFrame = false;
 
-    // 4. Trigger render
-    if (newStart !== this.viewport.start || newEnd !== this.viewport.end) {
-      this.viewport.start = newStart;
-      this.viewport.end = newEnd;
-      this.render();
-    }
+      const currentSvg = this.containerEl.querySelector("svg");
+      const chartW = currentSvg ? Math.max(1, currentSvg.clientWidth - 80) : 800;
+      
+      const dx = e.clientX - this.dragStartX;
+      const range = this.initialEnd - this.initialStart;
+      const shift = -Math.round((dx / chartW) * range);
+
+      let newStart = this.initialStart + shift;
+      let newEnd = this.initialEnd + shift;
+
+      if (newStart < 0) {
+        newStart = 0;
+        newEnd = range;
+      }
+      if (newEnd > this.data.length) {
+        newEnd = this.data.length;
+        newStart = Math.max(0, this.data.length - range);
+      }
+
+      if (newStart !== this.viewport.start || newEnd !== this.viewport.end) {
+        this.viewport.start = newStart;
+        this.viewport.end = newEnd;
+        this.render();
+      }
+    });
   }
 
   private onGlobalMouseUp() {
@@ -158,32 +164,31 @@ export class KlineChartController extends MarkdownRenderChild {
   }
 
   private onLocalMouseMove(e: MouseEvent) {
-    if (this.isDragging) return; // Disable tooltip while dragging
+    if (this.isDragging) return;
     
     const target = e.target as SVGElement;
-    const idxStr = target.getAttribute ? target.getAttribute("data-idx") : null;
-    
+    const idxStr = target.getAttribute?.("data-idx");
     const svg = this.containerEl.querySelector("svg");
     if (!svg) return;
     const hud = svg.querySelector(".kline-hud");
     
-    // 1. Get the corresponding candlestick data and render HUD
-    if (idxStr !== null && hud) {
+    if (idxStr != null && hud) {
       const idx = parseInt(idxStr, 10);
       const d = this.data[idx];
       if (d) {
         const isBull = d.close >= d.open;
         const color = isBull ? this.settings.bullColor : this.settings.bearColor;
-        const volStr = d.volume !== undefined ? `  Vol: ${d.volume}` : "";
+        const volStr = d.volume !== undefined ? `  volume: ${d.volume}` : "";
         const labelStr = d.label ? `${d.label} | ` : "";
-
-        hud.innerHTML = `<tspan font-weight="bold">${labelStr}</tspan>Open: ${d.open}  High: ${d.high}  Low: ${d.low}  Close: <tspan fill="${color}" font-weight="bold">${d.close}</tspan>${volStr}`;
+        
+        hud.innerHTML = 
+          `<tspan font-weight="bold">${labelStr}</tspan>` +
+          `O: ${d.open}  H: ${d.high}  L: ${d.low}  C: <tspan fill="${color}" font-weight="bold">${d.close}</tspan>${volStr}`;
       }
     }
   }
 
   private onMouseLeave() {
-    // Clear tooltip when mouse leaves chart area
     const svg = this.containerEl.querySelector("svg");
     const hud = svg?.querySelector(".kline-hud");
     if (hud) hud.innerHTML = "";
